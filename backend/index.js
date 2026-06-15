@@ -138,10 +138,5 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// Local dev server — Vercel uses the exported app directly
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => console.log(`QR backend running at http://localhost:${PORT}`));
-}
-
-module.exports = app;
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`QR backend running at http://localhost:${PORT}`));

@@ -36,7 +36,7 @@ export default function App() {
     setError(null);
     setQrImage(null);
     try {
-      const base = import.meta.env.VITE_API_URL || '';
+      const base = import.meta.env.VITE_API_URL || '/_/backend';
       const res = await fetch(`${base}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
