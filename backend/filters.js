@@ -82,6 +82,9 @@ const CATEGORIES = [
       /(?<!\w)wtf(?!\w)/i,
       /(?<!\w)stfu(?!\w)/i,
       /(?<!\w)kys(?!\w)/i,
+
+      // Insults
+      /\bstupid\b/i,
     ],
   },
 
