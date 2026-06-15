@@ -122,7 +122,7 @@ const FILTER_CATEGORIES = [
     label: 'تم اكتشاف محتوى غير لائق. (Arabic profanity detected.)',
     patterns: [
       'kus', 'kuss', 'ibn el sharmouta', 'sharmouta',
-      'ayri', 'ayre', 'khara', 'khra', 'yil'an',
+      'ayri', 'ayre', 'khara', 'khra', "yil'an",
       'ibn el', 'ya ibn',
     ],
   },
