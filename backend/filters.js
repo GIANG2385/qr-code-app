@@ -1,4 +1,5 @@
 // ─── Vietnamese + English Content Filter ─────────────────────────────────────
+const { CMU_BAD_WORDS } = require('./badwords');
 //
 // Each bad word is matched in THREE forms:
 //   1. WITH diacritics  → "lồn"
@@ -365,7 +366,22 @@ const CATEGORIES = [
     label: 'Content that endangers minors is strictly prohibited.',
     matchers: [
       'csam', 'child porn', 'minor explicit', 'preteen explicit',
+      'pedophile', 'paedophile', 'pedophilia', /\bpedo\b/i, /\bpaedo\b/i,
     ],
+  },
+
+  // ════════════════════════════════════════════════════════════
+  //  CMU BAD WORDS LIST (1345 words, biglou/resources)
+  //  Short words (≤4 chars) use word boundaries; longer ones
+  //  use substring match since they rarely appear in clean text.
+  // ════════════════════════════════════════════════════════════
+  {
+    label: 'Content contains prohibited language.',
+    matchers: CMU_BAD_WORDS.map((word) =>
+      word.length <= 4
+        ? new RegExp(`(?<![\\w])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`, 'i')
+        : word
+    ),
   },
 
 ];
