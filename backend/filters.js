@@ -83,8 +83,18 @@ const CATEGORIES = [
       /(?<!\w)stfu(?!\w)/i,
       /(?<!\w)kys(?!\w)/i,
 
-      // Insults
+      // Insults (English)
       /\bstupid\b/i,
+      /\bidiot\b/i,
+      /\bmoron\b/i,
+      /\bdumbass\b/i,
+      /\bloser\b/i,
+
+      // Insults (Vietnamese)
+      /(?<!\p{L})ngu(?!\p{L})/iu,   // ngu = stupid
+      /(?<!\p{L})khùng(?!\p{L})/iu, // crazy/dumb
+      /(?<!\p{L})điên(?!\p{L})/iu,  // crazy
+      /(?<!\p{L})óc chó(?!\p{L})/iu, // dog-brained
     ],
   },
 
