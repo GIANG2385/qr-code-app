@@ -8,22 +8,41 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// ─── AI Moderation (Gemini fallback) ─────────────────────────────────────────
+// ─── AI Moderation (Gemini + Safety Settings) ────────────────────────────────
+
+const SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_HATE_SPEECH',      threshold: 'BLOCK_LOW_AND_ABOVE' },
+  { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_LOW_AND_ABOVE' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_LOW_AND_ABOVE' },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_LOW_AND_ABOVE' },
+];
 
 async function geminiModerate(text) {
   if (!process.env.GEMINI_API_KEY) return null;
   try {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    const prompt = `You are a content moderation assistant. Determine if the following content is inappropriate, NSFW, harmful, illegal, or violates community standards (including: adult content, dark web, drugs, weapons, scams, hate speech, malware, child safety violations).\n\nReply in this exact format:\nVERDICT: yes/no\nREASON: one short sentence\n\nContent: ${text}`;
-    const result = await model.generateContent(prompt);
-    const response = result.response.text().trim();
-    const verdict = /VERDICT:\s*yes/i.test(response);
-    const reasonMatch = response.match(/REASON:\s*(.+)/i);
+    const { GoogleGenAI } = require('@google/genai');
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const prompt = `You are a content moderation assistant. Determine if the following content is inappropriate, NSFW, harmful, illegal, or violates community standards (adult content, dark web, drugs, weapons, scams, hate speech, malware, child safety).\n\nReply in this exact format:\nVERDICT: yes/no\nREASON: one short sentence\n\nContent: ${text}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { safetySettings: SAFETY_SETTINGS },
+    });
+
+    // If Gemini itself blocked the prompt via safety settings, treat as flagged
+    if (!response.text) return 'Content blocked by Gemini safety filters.';
+
+    const body = response.text.trim();
+    const verdict = /VERDICT:\s*yes/i.test(body);
+    const reasonMatch = body.match(/REASON:\s*(.+)/i);
     const reason = reasonMatch ? reasonMatch[1].trim() : 'Content flagged by AI moderation.';
     return verdict ? reason : null;
-  } catch {
+  } catch (err) {
+    // Gemini throws when safety settings block the input
+    if (err?.message?.includes('SAFETY')) return 'Content blocked by Gemini safety filters.';
+    console.error('Gemini moderation error:', err?.message);
     return null;
   }
 }
