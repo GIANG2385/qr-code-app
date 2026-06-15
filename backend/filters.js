@@ -1,313 +1,302 @@
-// ─── Multilingual Content Filter ─────────────────────────────────────────────
+// ─── Vietnamese + English Content Filter ─────────────────────────────────────
 //
-// Matching strategy:
-//  - Vietnamese bad words: matched WITH diacritics (exact Unicode), word-boundary aware
-//  - English/other words: substring match only for phrases 5+ chars; short words use \b
-//  - Regex patterns: used directly
-//  - normalize() is NOT used for matching — it caused false positives on normal text
+// Each bad word is matched in THREE forms:
+//   1. WITH diacritics  → "lồn"
+//   2. WITHOUT diacritics (ASCII) → "lon"  (word boundary prevents matching "London")
+//   3. Leet / bypass attempts → "l0n", "l*n", "l.o.n"
 
-// Helper: build a word-boundary regex for a plain string
-function wordBoundary(str) {
-  const escaped = str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![\\w\\u00C0-\\u024F])${escaped}(?![\\w\\u00C0-\\u024F])`, 'iu');
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Word-boundary regex for ASCII strings (safe for short words)
+function wb(word) {
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${esc}\\b`, 'i');
 }
 
-// Words 4 chars or shorter always use word boundary; longer ones use substring match
-function buildMatcher(pattern) {
-  if (pattern instanceof RegExp) return pattern;
-  if (pattern.trim().length <= 4) return wordBoundary(pattern.trim());
-  return null; // signals: use plain includes()
+// Check if text contains a plain string (case-insensitive substring)
+function has(text, phrase) {
+  return text.toLowerCase().includes(phrase.toLowerCase());
 }
 
-const FILTER_CATEGORIES = [
+// Run one category; return label string if matched, null otherwise
+function matchCategory(text, lower, { label, matchers }) {
+  for (const m of matchers) {
+    if (m instanceof RegExp ? m.test(text) : has(text, m)) return label;
+  }
+  return null;
+}
 
-  // ── 🇻🇳 Vietnamese Profanity ─────────────────────────────────────────────
-  // Matched WITH diacritics to avoid false-positives on English text
+// ─── Filter Categories ────────────────────────────────────────────────────────
+
+const CATEGORIES = [
+
+  // ════════════════════════════════════════════════════════════
+  //  VIETNAMESE PROFANITY
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Nội dung chứa từ ngữ thô tục không được phép.',
-    patterns: [
-      // Must match with Unicode diacritics — do NOT add plain ASCII versions here
-      /\bđ[iíìỉĩị]t\b/iu,
-      /\bcặc\b/iu,
-      /\blồn\b/iu,
-      /\bbuồi\b/iu,
-      /(?<!\w)đụ(?!\w)/iu,
-      /\bđéo\b/iu,
-      /\bđ[ií]a\b/iu,
-      /\bđ[ií]t\s*m[eẹ]\b/iu,
-      /du\s*m[áà]\b/iu,
+    matchers: [
+      // đ*t / dit / d1t / d!t
+      /đ[iíìỉĩị]t/iu,
+      /\bd[i!1|][t+]\b/i,
+      wb('dit'),
+
+      // cặc / cac / c@c / c4c
+      /cặc/iu,
+      /\bc[a@4][c]\b/i,
+      wb('cac'),
+
+      // lồn / lon / l0n
+      /lồn/iu,
+      /\bl[o0]n\b/i,
+
+      // buồi / buoi / bu0i
+      /buồi/iu,
+      /\bbu[o0]i\b/i,
+
+      // đụ / du (only as standalone)
+      /đụ/iu,
+      /\bdu\s+m[aáà]/i,
+
+      // đéo / deo
+      /đéo/iu,
+      /\bd[e3]o\b/i,
+
+      // cứt / cut (as Vietnamese word — must be standalone)
+      /cứt/iu,
       /\bcứt\b/iu,
+
+      // dái / dai (standalone)
       /\bdái\b/iu,
-      /\bc[aà]v[e]\b/iu,               // cave / cavê (sex work slang)
-      /gái\s*đi[eê]m/iu,
-      /\bđi[eê]m\b/iu,
+      /\bd[a@]i\b/i,
+
+      // vãi (standalone)
+      /\bvãi\b/iu,
+      /\bv[a@]i\b/i,
+
+      // đĩ / di (sex worker — only standalone)
+      /\bđĩ\b/iu,
+
+      // thằng ngu / đồ ngu / đồ chó / đồ khốn
+      /thằng\s*ngu/iu,
+      /đồ\s*(ngu|chó|khốn)/iu,
+      /\bkhốn\s*nạn\b/iu,
+
+      // mẹ kiếp / tiên sư / bố láo
+      /mẹ\s*kiếp/iu,
+      /tiên\s*sư/iu,
+      /bố\s*láo/iu,
+
+      // con chó / chó chết / súc vật
+      /con\s*chó\s*chết/iu,
+      /súc\s*vật/iu,
+
+      // cave / gái điếm / điếm / gái gọi
+      /\bcave\b/i,
+      /gái\s*(điếm|gọi)/iu,
+      /\bđiếm\b/iu,
+
+      // phim sex / phim khiêu dâm / ảnh khỏa thân
       /phim\s*sex/iu,
-      /ph[iì]m\s*khi[eê]u\s*dâm/iu,
+      /phim\s*khi[eê]u\s*dâm/iu,
       /ảnh\s*kh[oỏ]a\s*thân/iu,
-      /mua\s*ma\s*t[uú]y/iu,
-      /bán\s*ma\s*t[uú]y/iu,
-      /mua\s*heroin/iu,
-      /mua\s*cần\s*sa/iu,
-      /\bthu[oố]c\s*l[aắ]c\b/iu,
-      /hack\s*(zalo|facebook|tài\s*khoản)/iu,
-      /đánh\s*cắp\s*(mật\s*khẩu|dữ\s*liệu)/iu,
-      /\blừa\s*đảo\b/iu,
-      /\bgiả\s*mạo\b/iu,
+
+      // ma túy / heroin / cần sa / thuốc lắc
+      /ma\s*t[uú]y/iu,
+      /\bheroin\b/i,
+      /cần\s*sa/iu,
+      /thu[oố]c\s*l[aắ]c/iu,
+
+      // lừa đảo / giả mạo
+      /lừa\s*đảo/iu,
+      /giả\s*mạo/iu,
+
+      // đánh cắp / hack tài khoản
+      /đánh\s*cắp/iu,
+      /hack\s*tài\s*khoản/iu,
+
+      // mua / bán vũ khí
       /mua\s*vũ\s*khí/iu,
+      /bán\s*vũ\s*khí/iu,
+
+      // chế tạo bom / giết người
       /chế\s*tạo\s*bom/iu,
       /giết\s*người/iu,
-      /\bkhủng\s*bố\b/iu,
+
+      // khủng bố / xâm hại trẻ em
+      /khủng\s*bố/iu,
       /xâm\s*hại\s*trẻ\s*em/iu,
     ],
   },
 
-  // ── 🇺🇸 English Profanity ────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  ENGLISH PROFANITY
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Content contains profanity or offensive language.',
-    patterns: [
-      // Use regex with word boundaries for short/ambiguous words
-      /\bf+u+c+k+\b/i,
-      /\bsh[i1!]+t\b/i,
-      /\bb[i1]+tch\b/i,
+    matchers: [
+      // fuck / f*ck / fck / ph*ck
+      /\bf+[u*@][c*]{1,2}k+\b/i,
+      /\bf{1,2}[u*@3]c+\b/i,
+
+      // shit / sh!t / sh1t
+      /\bsh[i!1]+t\b/i,
+
+      // bitch / b*tch / biatch
+      /\bb[i!1*]+tch\b/i,
+      /\bbiatch\b/i,
+
+      // ass / asshole / dumbass / jackass
       /\basshole\b/i,
-      /\bbastard\b/i,
-      /\bc+u+n+t\b/i,
-      /\bd[i!1]+ck\b/i,
-      /\bc[o0]+ck\b/i,
-      /\bp+u+s+y\b/i,
-      /\bn[i1!]+gg[ae]+r\b/i,
+      /\bdumb\s*ass\b/i,
+      /\bjack\s*ass\b/i,
+      /\bdip\s*shit\b/i,
+
+      // bastard
+      wb('bastard'),
+
+      // cunt / c*nt
+      /\bc[u*]+n+t\b/i,
+
+      // dick / d*ck
+      /\bd[i!1*]+ck\b/i,
+
+      // cock / c*ck
+      /\bc[o0*]+ck\b/i,
+
+      // pussy / p*ssy
+      /\bp[u*]+ss?y\b/i,
+
+      // nigger / nigga / n-word
+      /\bn[i!1*]+gg[ae]+r?\b/i,
       /\bn-word\b/i,
-      /\bfaggot\b/i,
+
+      // faggot / fag
+      /\bfagg?[o0]t\b/i,
+
+      // retard
       /\bretard(ed)?\b/i,
-      /\bwh[o0]+re\b/i,
-      /\bslut\b/i,
-      /\bskank\b/i,
-      /\bprick\b/i,
-      /\bwanker\b/i,
-      /\btwat\b/i,
-      /\bdipshit\b/i,
-      /\bdumbass\b/i,
-      /\bjackass\b/i,
-      /\bmotherfuck/i,
-      // Longer phrases — substring is fine
-      'onlyfans', 'pornhub', 'xvideos', 'xnxx', 'xhamster',
-      'brazzers', 'bangbros',
+
+      // whore / wh0re
+      /\bwh[o0*]+re\b/i,
+
+      // slut / sl*t
+      /\bsl[u*]+t\b/i,
+
+      // motherfucker / mf
+      /\bm[o0*]+ther\s*f[u*]+ck/i,
+      /\bmf+\b/i,
+
+      // prick / wanker / twat / tosser
+      wb('prick'),
+      wb('wanker'),
+      wb('twat'),
+      wb('tosser'),
     ],
   },
 
-  // ── 18+ / Adult Content ───────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  ADULT / NSFW (both languages)
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Adult / NSFW content is not allowed.',
-    patterns: [
-      /\bporn(star|ography)?\b/i,
+    matchers: [
+      /\bporn(hub|star|ography)?\b/i,
       /\bxxx\b/i,
       /\bnsfw\b/i,
-      /\bnud(e|ity)\b/i,
+      /\bnud(e|ity|ist)\b/i,
       /\bnaked\b/i,
       /\berotic\b/i,
       'explicit content', 'adult content', 'sex tape',
+      'onlyfans', 'xvideos', 'xnxx', 'xhamster', 'brazzers',
       'camgirl', 'escort service', 'prostitut',
-      // Japanese/Chinese adult slang
-      /\bjav\b/i,
-      /\bav (video|film|actress)/i,
-      'seqing', 'se qing', 'huang se',
     ],
   },
 
-  // ── Dark Web / Tor ────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  DARK WEB / TOR
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Dark web / Tor links are not allowed.',
-    patterns: [
+    matchers: [
       /\.onion\b/i,
       'darkweb', 'dark web', 'deepweb', 'deep web',
-      'tor browser', 'tor network', 'tor2web',
-      'silkroad', 'silk road', 'alphabay', 'dream market',
-      'darknet market', 'hidden wiki', 'empire market',
+      'tor browser', 'tor network', 'silkroad', 'silk road',
+      'darknet market', 'hidden wiki', 'alphabay',
     ],
   },
 
-  // ── Drugs ─────────────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  DRUGS
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Drug-related content is not allowed.',
-    patterns: [
+    matchers: [
       'buy cocaine', 'buy heroin', 'buy meth', 'buy drugs',
       'buy weed online', 'buy cannabis online',
       'drug dealer', 'drug market', 'narcotics for sale',
-      'fentanyl for sale', 'ketamine for sale',
-      'mdma for sale', 'lsd for sale', 'shrooms for sale',
-      'comprar drogas', 'vender cocaína',
-      'mai du pin', 'du pin jiao yi',
+      'fentanyl for sale', 'mdma for sale', 'lsd for sale',
     ],
   },
 
-  // ── Weapons & Violence ────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  WEAPONS & VIOLENCE
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Weapons or violent content is not allowed.',
-    patterns: [
+    matchers: [
       'buy guns online', 'illegal weapons', 'buy explosives',
-      'bomb making', 'how to make a bomb', 'pipe bomb',
-      'ghost gun', 'untraceable gun',
-      'mass shooting',
-      'comprar armas', 'fabricar bomba',
+      'bomb making', 'how to make a bomb', 'ghost gun',
+      'mass shooting', 'kill people',
     ],
   },
 
-  // ── Scam / Phishing ───────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  SCAM / PHISHING
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Scam, phishing, or fraud content is not allowed.',
-    patterns: [
+    matchers: [
       'phishing', 'credential harvest', 'steal password',
       'bank account hack', 'credit card dump',
-      'carding forum', 'cvv dump', 'fullz for sale',
-      'fake passport', 'counterfeit money', 'money laundering',
+      'carding forum', 'cvv dump', 'fake passport',
+      'counterfeit money', 'money laundering',
     ],
   },
 
-  // ── Hate Speech & Terrorism ───────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  HATE SPEECH & TERRORISM
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Hate speech or extremist content is not allowed.',
-    patterns: [
+    matchers: [
       /\bisis\b/i,
       'al-qaeda', 'al qaeda', 'jihad recruitment',
       'white supremac', 'neo-nazi', 'neo nazi',
       'ethnic cleansing', 'terrorist attack',
-      'join isis', 'join al-qaeda',
     ],
   },
 
-  // ── Malware / Hacking ─────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  MALWARE / HACKING
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Malware or hacking content is not allowed.',
-    patterns: [
+    matchers: [
       'download malware', 'ransomware download', 'keylogger download',
       'trojan download', 'virus download',
       'hack facebook', 'hack instagram', 'hack wifi password',
-      'ddos attack', 'ddos tool', 'free hacking tools',
+      'ddos attack', 'ddos tool',
     ],
   },
 
-  // ── Child Safety ──────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════
+  //  CHILD SAFETY
+  // ════════════════════════════════════════════════════════════
   {
     label: 'Content that endangers minors is strictly prohibited.',
-    patterns: [
-      'csam', 'child porn', 'minor explicit',
-      'preteen explicit', 'lolita site',
-    ],
-  },
-
-  // ── French ────────────────────────────────────────────────────────────────
-  {
-    label: 'Le contenu contient des grossièretés.',
-    patterns: [
-      /\bmerde\b/i,
-      /\bputain\b/i,
-      /\bconnard\b/i,
-      /\bconnasse\b/i,
-      /\bsalope\b/i,
-      /\benculé\b/i,
-      'fils de pute', 'va te faire foutre',
-      /\bbordel\b/i,
-      /\bpédé\b/i,
-    ],
-  },
-
-  // ── Spanish ───────────────────────────────────────────────────────────────
-  {
-    label: 'El contenido contiene lenguaje ofensivo.',
-    patterns: [
-      /\bputa\b/i,
-      /\bcoño\b/i,
-      /\bjoder\b/i,
-      /\bcabrón\b/i,
-      'hijo de puta', 'hdp',
-      /\bmaricón\b/i,
-      /\bgilipollas\b/i,
-      /\bmierda\b/i,
-      /\bchingada\b/i,
-      /\bpendejo\b/i,
-      /\bverga\b/i,
-      /\bpinche\b/i,
-      /\bcarajo\b/i,
-    ],
-  },
-
-  // ── Portuguese ────────────────────────────────────────────────────────────
-  {
-    label: 'O conteúdo contém linguagem ofensiva.',
-    patterns: [
-      /\bporra\b/i,
-      /\bcaralho\b/i,
-      /\bfoda\b/i, 'foda-se',
-      /\bmerda\b/i,
-      /\bviado\b/i,
-      /\bbuceta\b/i,
-      /\barrombado\b/i,
-      /\bvadia\b/i,
-      'filho da puta', 'fdp',
-    ],
-  },
-
-  // ── German ────────────────────────────────────────────────────────────────
-  {
-    label: 'Der Inhalt enthält anstößige Sprache.',
-    patterns: [
-      /\bschei[ßs]e\b/i,
-      /\bfick(en)?\b/i,
-      /\barschloch\b/i,
-      /\bwichser\b/i,
-      /\bhurensohn\b/i,
-      /\bschlampe\b/i,
-      /\bfotze\b/i,
-    ],
-  },
-
-  // ── Japanese (Romaji) ─────────────────────────────────────────────────────
-  {
-    label: '不適切なコンテンツが検出されました。',
-    patterns: [
-      /\bkuso\b/i,
-      /\bchikusho\b/i,
-      /\bmanko\b/i,
-      /\bchinpo\b/i,
-      /\byariman\b/i,
-      /\bsukebe\b/i,
-      /\bhentai\b/i,
-    ],
-  },
-
-  // ── Korean (Romaji) ──────────────────────────────────────────────────────
-  {
-    label: '부적절한 내용이 감지되었습니다。',
-    patterns: [
-      /\bs+[i1]b[a@]l\b/i,
-      /\bgaesaekki\b/i,
-      /\bjiral\b/i,
-      /\bmichin\b/i,
-    ],
-  },
-
-  // ── Chinese (Pinyin) ─────────────────────────────────────────────────────
-  {
-    label: '检测到不当内容。',
-    patterns: [
-      /\btmd\b/i,
-      'cao ni', 'caoni', 'cao nima',
-      /\bshabi\b/i, 'sha bi',
-      /\bhundan\b/i, 'hun dan',
-      /\bnmsl\b/i,
-      /\bcnm\b/i,
-    ],
-  },
-
-  // ── Arabic (Romaji) ──────────────────────────────────────────────────────
-  {
-    label: 'تم اكتشاف محتوى غير لائق.',
-    patterns: [
-      /\bsharmouta\b/i,
-      /\bkhara\b/i,
-      /\bayri\b/i,
-      "yil'an",
-      /\bib[mn]\s*el\b/i,
+    matchers: [
+      'csam', 'child porn', 'minor explicit', 'preteen explicit',
     ],
   },
 
@@ -323,7 +312,9 @@ const TRUSTED_DOMAINS = [
 function isTrustedDomain(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
-    return TRUSTED_DOMAINS.some((d) => hostname === d || hostname.endsWith('.' + d));
+    return TRUSTED_DOMAINS.some(
+      (d) => hostname === d || hostname.endsWith('.' + d)
+    );
   } catch {
     return false;
   }
@@ -333,27 +324,11 @@ function isTrustedDomain(url) {
 
 function runContentFilter(text, url) {
   if (url && isTrustedDomain(url)) return null;
-
-  for (const category of FILTER_CATEGORIES) {
-    for (const pattern of category.patterns) {
-      let matched = false;
-
-      if (pattern instanceof RegExp) {
-        matched = pattern.test(text);
-      } else {
-        // Plain string: use word-boundary regex for short terms, includes() for long ones
-        const trimmed = pattern.trim();
-        if (trimmed.length <= 4) {
-          matched = wordBoundary(trimmed).test(text);
-        } else {
-          matched = text.toLowerCase().includes(trimmed.toLowerCase());
-        }
-      }
-
-      if (matched) return category.label;
-    }
+  const lower = text.toLowerCase();
+  for (const cat of CATEGORIES) {
+    const hit = matchCategory(text, lower, cat);
+    if (hit) return hit;
   }
-
   return null;
 }
 
