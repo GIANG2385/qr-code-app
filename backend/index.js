@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// ─── AI Moderation (Gemini + Safety Settings) ────────────────────────────────
+// ─── AI Moderation (Gemini structured JSON + Safety Settings) ────────────────
 
 const SAFETY_SETTINGS = [
   { category: 'HARM_CATEGORY_HATE_SPEECH',      threshold: 'BLOCK_LOW_AND_ABOVE' },
@@ -20,27 +20,49 @@ const SAFETY_SETTINGS = [
 async function geminiModerate(text) {
   if (!process.env.GEMINI_API_KEY) return null;
   try {
-    const { GoogleGenAI } = require('@google/genai');
+    const { GoogleGenAI, Type } = require('@google/genai');
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-    const prompt = `You are a content moderation assistant. Determine if the following content is inappropriate, NSFW, harmful, illegal, or violates community standards (adult content, dark web, drugs, weapons, scams, hate speech, malware, child safety).\n\nReply in this exact format:\nVERDICT: yes/no\nREASON: one short sentence\n\nContent: ${text}`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: { safetySettings: SAFETY_SETTINGS },
+      contents: `Hãy kiểm duyệt nội dung sau: "${text}"`,
+      config: {
+        systemInstruction:
+          'Bạn là AI kiểm duyệt nội dung đa ngôn ngữ. Phân tích nội dung và xác định xem có vi phạm tiêu chuẩn cộng đồng hay không, bao gồm: bạo lực, xúc phạm, đồi trụy, spam, dark web, ma túy, vũ khí, lừa đảo, ngôn từ thù địch, phần mềm độc hại, hoặc nội dung gây hại cho trẻ em.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            is_violating: {
+              type: Type.BOOLEAN,
+              description: 'True nếu vi phạm, False nếu an toàn.',
+            },
+            reason: {
+              type: Type.STRING,
+              description: 'Lý do ngắn gọn nếu vi phạm (bằng tiếng Anh).',
+            },
+            category: {
+              type: Type.STRING,
+              description: 'Phân loại: spam | toxic | nsfw | darkweb | drugs | weapons | scam | hate | malware | csam | none',
+            },
+          },
+          required: ['is_violating', 'reason', 'category'],
+        },
+        safetySettings: SAFETY_SETTINGS,
+      },
     });
 
-    // If Gemini itself blocked the prompt via safety settings, treat as flagged
     if (!response.text) return 'Content blocked by Gemini safety filters.';
 
-    const body = response.text.trim();
-    const verdict = /VERDICT:\s*yes/i.test(body);
-    const reasonMatch = body.match(/REASON:\s*(.+)/i);
-    const reason = reasonMatch ? reasonMatch[1].trim() : 'Content flagged by AI moderation.';
-    return verdict ? reason : null;
+    const result = JSON.parse(response.text);
+
+    if (result.is_violating) {
+      const category = result.category !== 'none' ? ` [${result.category}]` : '';
+      return `${result.reason}${category}`;
+    }
+    return null;
+
   } catch (err) {
-    // Gemini throws when safety settings block the input
     if (err?.message?.includes('SAFETY')) return 'Content blocked by Gemini safety filters.';
     console.error('Gemini moderation error:', err?.message);
     return null;
