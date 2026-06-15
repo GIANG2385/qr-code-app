@@ -25,10 +25,46 @@ async function geminiModerate(text) {
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Hãy kiểm duyệt nội dung sau: "${text}"`,
+      contents: `Hãy kiểm duyệt nội dung sau đây:\n\n"${text}"`,
       config: {
-        systemInstruction:
-          'Bạn là AI kiểm duyệt nội dung đa ngôn ngữ. Phân tích nội dung và xác định xem có vi phạm tiêu chuẩn cộng đồng hay không, bao gồm: bạo lực, xúc phạm, đồi trụy, spam, dark web, ma túy, vũ khí, lừa đảo, ngôn từ thù địch, phần mềm độc hại, hoặc nội dung gây hại cho trẻ em.',
+        systemInstruction: `Bạn là AI kiểm duyệt nội dung chuyên biệt cho người dùng Việt Nam và tiếng Anh.
+
+Nhiệm vụ: Phát hiện mọi nội dung vi phạm, kể cả khi người dùng cố tình che giấu bằng cách viết tắt, teencode, hoặc biến thể chính tả.
+
+=== DANH SÁCH TEENCODE / TỪ LÓNG CẦN PHÁT HIỆN ===
+
+Chửi thề / xúc phạm (tiếng Việt):
+- "đm", "dm", "đmm", "đmm", "đmmd" = "đụ má mày" → VI PHẠM
+- "vl", "vcl", "vkl" = "vãi lồn" → VI PHẠM
+- "cl", "cul" = "cặc lồn" → VI PHẠM
+- "loz", "lồz", "l0z" = "lồn" → VI PHẠM
+- "duma", "du ma", "đuma" = "đụ má" → VI PHẠM
+- "mm", "clmm" = biến thể chửi thề → VI PHẠM
+- "wtfvn", "đkm", "dkm" = chửi thề → VI PHẠM
+- "tml", "đtml" = "tiên mẹ lồn" → VI PHẠM
+- "cmnr", "cmn" = "cái mặt nạ r..." → kiểm tra ngữ cảnh
+- "mcs", "m.c.s" = "má con..." → kiểm tra ngữ cảnh
+- "clgt", "con lồn gì thế" → VI PHẠM
+- "đcm", "dcm" = chửi thề → VI PHẠM
+- "ktml", "kttml" = chửi thề → VI PHẠM
+- "dmml", "đmml" = chửi thề → VI PHẠM
+- "lmao" + ngữ cảnh xúc phạm → kiểm tra
+- "cờ lờ" = ám chỉ "cặc lồn" → VI PHẠM
+- "b*tch", "b1tch", "bít" trong ngữ cảnh xúc phạm → VI PHẠM
+
+Nội dung 18+ / đồi trụy:
+- "fs", "địt" trong ngữ cảnh tình dục → VI PHẠM
+- "lm tình", "quan hệ" + ngữ cảnh khiêu dâm → VI PHẠM
+- link rút gọn dẫn đến web đen → VI PHẠM
+
+=== QUY TẮC PHÂN TÍCH ===
+1. Phân tích TOÀN BỘ ngữ cảnh, không chỉ từng từ đơn lẻ.
+2. "đm" trong "đm tao thích bài này" = chửi thề → VI PHẠM.
+3. "vl" trong "vl đẹp quá" = chửi thề → VI PHẠM.
+4. Viết tắt + ngữ cảnh tích cực vẫn là VI PHẠM nếu bản thân từ viết tắt là chửi thề.
+5. Chỉ trả về is_violating=false nếu THỰC SỰ an toàn và không có dấu hiệu lách luật.
+6. Nội dung tiếng Anh: áp dụng tương tự với slang, abbreviation (wtf, stfu, pos...).`,
+
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -39,14 +75,18 @@ async function geminiModerate(text) {
             },
             reason: {
               type: Type.STRING,
-              description: 'Lý do ngắn gọn nếu vi phạm (bằng tiếng Anh).',
+              description: 'Giải thích ngắn tại sao vi phạm hoặc an toàn (1 câu, tiếng Anh).',
             },
             category: {
               type: Type.STRING,
-              description: 'Phân loại: spam | toxic | nsfw | darkweb | drugs | weapons | scam | hate | malware | csam | none',
+              description: 'Phân loại: toxic | nsfw | spam | darkweb | drugs | weapons | scam | hate | malware | csam | none',
+            },
+            detected_teencode: {
+              type: Type.STRING,
+              description: 'Teencode hoặc từ lóng bị phát hiện, để trống nếu không có.',
             },
           },
-          required: ['is_violating', 'reason', 'category'],
+          required: ['is_violating', 'reason', 'category', 'detected_teencode'],
         },
         safetySettings: SAFETY_SETTINGS,
       },
@@ -57,8 +97,9 @@ async function geminiModerate(text) {
     const result = JSON.parse(response.text);
 
     if (result.is_violating) {
-      const category = result.category !== 'none' ? ` [${result.category}]` : '';
-      return `${result.reason}${category}`;
+      const tag = result.category !== 'none' ? ` [${result.category}]` : '';
+      const teencode = result.detected_teencode ? ` (detected: "${result.detected_teencode}")` : '';
+      return `${result.reason}${tag}${teencode}`;
     }
     return null;
 
