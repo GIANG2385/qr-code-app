@@ -2,34 +2,29 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const QRCode = require('qrcode');
+const { runContentFilter } = require('./filters');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// ─── Content Filtering ────────────────────────────────────────────────────────
-
-const NSFW_KEYWORDS = [
-  'porn', 'xxx', 'adult content', 'nude', 'naked', 'nsfw',
-  'explicit', 'erotic', 'hentai', 'onlyfans',
-];
-
-function basicFilter(text) {
-  const lower = text.toLowerCase();
-  return NSFW_KEYWORDS.some((kw) => lower.includes(kw));
-}
+// ─── AI Moderation (Gemini fallback) ─────────────────────────────────────────
 
 async function geminiModerate(text) {
-  if (!process.env.GEMINI_API_KEY) return false;
+  if (!process.env.GEMINI_API_KEY) return null;
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    const prompt = `Is the following content inappropriate, NSFW, harmful, or illegal? Reply ONLY with "yes" or "no".\n\nContent: ${text}`;
+    const prompt = `You are a content moderation assistant. Determine if the following content is inappropriate, NSFW, harmful, illegal, or violates community standards (including: adult content, dark web, drugs, weapons, scams, hate speech, malware, child safety violations).\n\nReply in this exact format:\nVERDICT: yes/no\nREASON: one short sentence\n\nContent: ${text}`;
     const result = await model.generateContent(prompt);
-    return result.response.text().trim().toLowerCase().startsWith('yes');
+    const response = result.response.text().trim();
+    const verdict = /VERDICT:\s*yes/i.test(response);
+    const reasonMatch = response.match(/REASON:\s*(.+)/i);
+    const reason = reasonMatch ? reasonMatch[1].trim() : 'Content flagged by AI moderation.';
+    return verdict ? reason : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -113,12 +108,18 @@ app.post('/api/generate', async (req, res) => {
     const content = buildQRContent(type, data);
 
     const sampleText = type === 'wifi' ? data.ssid : content;
-    if (basicFilter(sampleText)) {
-      return res.status(400).json({ success: false, errors: ['Content contains inappropriate material.'] });
+    const urlForCheck = type === 'url' ? data.url : null;
+
+    // Layer 1: fast keyword/pattern filter
+    const filterResult = runContentFilter(sampleText, urlForCheck);
+    if (filterResult) {
+      return res.status(400).json({ success: false, errors: [filterResult] });
     }
-    const flagged = await geminiModerate(sampleText);
-    if (flagged) {
-      return res.status(400).json({ success: false, errors: ['Content was flagged as inappropriate by AI moderation.'] });
+
+    // Layer 2: AI moderation (Gemini) — catches context the keyword list misses
+    const aiReason = await geminiModerate(sampleText);
+    if (aiReason) {
+      return res.status(400).json({ success: false, errors: [`AI moderation: ${aiReason}`] });
     }
 
     const { size = 300, color = '#000000', bgColor = '#ffffff' } = options;
