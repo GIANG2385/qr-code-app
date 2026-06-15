@@ -375,10 +375,35 @@ function isTrustedDomain(url) {
   }
 }
 
+// ─── Consecutive Repeated Word Detection ─────────────────────────────────────
+// Catches "hello hello", "ngu ngu ngu", "test test", "lol lol lol", etc.
+// A "word" here is any sequence of Unicode letters/digits (covers Vietnamese).
+
+function hasConsecutiveRepeatedWords(text) {
+  // (?<!\p{L}) and (?!\p{L}) act as Unicode word boundaries
+  // ensuring we match WHOLE words, not suffixes/prefixes
+
+  // Single whole-word repeat: "hello hello", "ngu ngu", "ok ok"
+  const singleWord = /(?<!\p{L})(\p{L}[\p{L}\p{N}]*)(?!\p{L})\s+\1(?!\p{L})/giu;
+  if (singleWord.test(text)) return true;
+
+  // Two-word phrase repeat: "xin chào xin chào", "hello world hello world"
+  const twoWord = /(?<!\p{L})(\p{L}[\p{L}\p{N}]*\s+\p{L}[\p{L}\p{N}]*)(?!\p{L})\s+\1(?!\p{L})/giu;
+  if (twoWord.test(text)) return true;
+
+  return false;
+}
+
 // ─── Main Filter ──────────────────────────────────────────────────────────────
 
 function runContentFilter(text, url) {
   if (url && isTrustedDomain(url)) return null;
+
+  // Check consecutive repeated words first (spam pattern)
+  if (hasConsecutiveRepeatedWords(text)) {
+    return 'Consecutive repeated words are not allowed.';
+  }
+
   const lower = text.toLowerCase();
   for (const cat of CATEGORIES) {
     const hit = matchCategory(text, lower, cat);
