@@ -1,5 +1,6 @@
 // ─── Vietnamese + English Content Filter ─────────────────────────────────────
 const { CMU_BAD_WORDS } = require('./badwords');
+const { GOOGLE_BAD_WORDS } = require('./google-badwords');
 //
 // Each bad word is matched in THREE forms:
 //   1. WITH diacritics  → "lồn"
@@ -371,13 +372,23 @@ const CATEGORIES = [
   },
 
   // ════════════════════════════════════════════════════════════
-  //  CMU BAD WORDS LIST (1345 words, biglou/resources)
-  //  Short words (≤4 chars) use word boundaries; longer ones
-  //  use substring match since they rarely appear in clean text.
+  //  CMU BAD WORDS LIST (biglou/resources)
   // ════════════════════════════════════════════════════════════
   {
     label: 'Content contains prohibited language.',
     matchers: CMU_BAD_WORDS.map((word) =>
+      word.length <= 4
+        ? new RegExp(`(?<![\\w])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`, 'i')
+        : word
+    ),
+  },
+
+  // ════════════════════════════════════════════════════════════
+  //  GOOGLE PROFANITY WORDS (coffee-and-fun, en/fr/es/ar/zh/ga)
+  // ════════════════════════════════════════════════════════════
+  {
+    label: 'Content contains prohibited language.',
+    matchers: GOOGLE_BAD_WORDS.map((word) =>
       word.length <= 4
         ? new RegExp(`(?<![\\w])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`, 'i')
         : word
