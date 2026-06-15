@@ -31,6 +31,61 @@ function matchCategory(text, lower, { label, matchers }) {
 const CATEGORIES = [
 
   // ════════════════════════════════════════════════════════════
+  //  VIETNAMESE TEENCODE / VIẾT TẮT CHỬI THỀ
+  //  Must run BEFORE the full-word Vietnamese list
+  // ════════════════════════════════════════════════════════════
+  {
+    label: 'Nội dung chứa từ viết tắt / teencode thô tục không được phép.',
+    matchers: [
+      // — NOTE: \b does not work with Vietnamese Unicode chars (đ, ồ…)
+      // — Use (?<!\w) / (?!\w) as word boundaries for those patterns
+
+      // đm / đmm / đmmm (đụ má) — keep "đ" to avoid "Dm (decimeter)" false positive
+      /(?<!\w)đm+(?!\w)/iu,
+      /(?<!\w)đmmd(?!\w)/iu,
+      // dm + Vietnamese word after it (mày, má, mẹ, mấy)
+      /(?<!\w)dm\s*(m[àáaẹ]y?|m[aàáâ]y)\b/iu,
+
+      // vl / vcl / vkl (vãi lồn) — case-sensitive lowercase to avoid "VL (Vĩnh Long)"
+      /(?<!\w)v[ck]?l(?!\w)/,        // lowercase only — intentional, no /i flag
+      /(?<!\w)vkl(?!\w)/,
+
+      // cl / cul (cặc lồn)
+      /(?<!\w)cu?l(?!\w)/i,
+
+      // loz / lồz / l0z (lồn)
+      /(?<!\w)l[oô0ồ]z(?!\w)/iu,
+
+      // duma / đuma / du ma (đụ má)
+      /(?<!\w)(duma|đuma)(?!\w)/iu,
+      /(?<!\w)(du|đu)\s*ma(?!\w)/iu,
+
+      // đcm / dcm / dkm / đkm — each listed explicitly to avoid regex mistake
+      /(?<!\w)(đcm|dcm|dkm|đkm|đkcm|dkcm)(?!\w)/iu,
+
+      // tml / đtml / ktml (tiên mẹ lồn)
+      /(?<!\w)[kđd]?tml(?!\w)/iu,
+
+      // clgt (con lồn gì thế)
+      /(?<!\w)clgt(?!\w)/i,
+
+      // dmml / đmml
+      /(?<!\w)[đd]mml(?!\w)/iu,
+
+      // cờ lờ (ám chỉ cặc lồn)
+      /cờ\s*lờ/iu,
+
+      // clmm
+      /(?<!\w)clmm(?!\w)/i,
+
+      // wtf / stfu / kys (English aggressive slang)
+      /(?<!\w)wtf(?!\w)/i,
+      /(?<!\w)stfu(?!\w)/i,
+      /(?<!\w)kys(?!\w)/i,
+    ],
+  },
+
+  // ════════════════════════════════════════════════════════════
   //  VIETNAMESE PROFANITY
   // ════════════════════════════════════════════════════════════
   {
